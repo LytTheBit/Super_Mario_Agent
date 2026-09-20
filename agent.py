@@ -23,20 +23,17 @@ class Mario:
         self.exploration_rate_decay = 0.99999975
         self.exploration_rate_min = 0.1
         self.curr_step = 0
-
-        self.save_every = 5e5  # steps between checkpoint saves
-
         self.memory = TensorDictReplayBuffer(storage=LazyMemmapStorage(100000, device=torch.device("cpu")))
         self.batch_size = 32
 
-        self.gamma = 0.9  # discount factor for future rewards
+        self.gamma = 0.9
 
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
         self.loss_fn = torch.nn.SmoothL1Loss()
 
-        self.burnin = 1e4       # min. experiences before we start training
-        self.learn_every = 3    # steps between calls to update_Q_online
-        self.sync_every = 1e4   # steps between target network sync
+        self.burnin = 1e4
+        self.learn_every = 3
+        self.sync_every = 1e4
 
     def act(self, state):
         """Given a state, choose an epsilon-greedy action and update curr_step."""
