@@ -136,17 +136,20 @@ class Mario:
         return (td_est.mean().item(), loss)
 
     def save(self):
-        """Save the online network's weights and current exploration rate to disk."""
+        """Save the online network's weights, exploration rate, and step counter to disk."""
         save_path = self.save_dir / f"mario_net_{int(self.curr_step // self.save_every)}.chkpt"
         torch.save(
-            dict(model=self.net.state_dict(), exploration_rate=self.exploration_rate),
+            dict(model=self.net.state_dict(), exploration_rate=self.exploration_rate, curr_step=self.curr_step),
             save_path,
         )
         print(f"MarioNet saved to {save_path} at step {self.curr_step}")
 
     def load(self, checkpoint_path):
-        """Load network weights and exploration rate from a saved checkpoint."""
+        """Load network weights, exploration rate, and step counter from a saved checkpoint."""
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.net.load_state_dict(checkpoint["model"])
         self.exploration_rate = checkpoint["exploration_rate"]
-        print(f"Loaded checkpoint from {checkpoint_path} (exploration_rate={self.exploration_rate:.4f})")
+        self.curr_step = checkpoint.get("curr_step",
+                                        0)  # .get: retro-compatibile con vecchi checkpoint senza questo campo
+        print(
+            f"Loaded checkpoint from {checkpoint_path} (exploration_rate={self.exploration_rate:.4f}, curr_step={self.curr_step})")

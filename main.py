@@ -101,40 +101,47 @@ FRAME_DELAY = 4 / 60.0988  # NES ~60.0988 fps; SkipFrame repeats each action for
 
 training_start = time.time()
 
-for e in range(args.episodes):
-    state = env.reset()
+try:
+    for e in range(args.episodes):
+        state = env.reset()
 
-    while True:
-        action = mario.act(state)
-        next_state, reward, done, trunc, info = env.step(action)
+        while True:
+            action = mario.act(state)
+            next_state, reward, done, trunc, info = env.step(action)
 
-        if not args.eval:
-            mario.cache(state, next_state, action, reward, done)
-            q, loss = mario.learn()
-        else:
-            q, loss = None, None
+            if not args.eval:
+                mario.cache(state, next_state, action, reward, done)
+                q, loss = mario.learn()
+            else:
+                q, loss = None, None
 
-        logger.log_step(reward, loss, q)
-        state = next_state
+            logger.log_step(reward, loss, q)
+            state = next_state
 
-        if args.render == "human" and args.speed == "normal":
-            time.sleep(FRAME_DELAY)
+            if args.render == "human" and args.speed == "normal":
+                time.sleep(FRAME_DELAY)
 
-        if done or info["flag_get"]:
-            break
+            if done or info["flag_get"]:
+                break
 
-    logger.log_episode()
+        logger.log_episode()
 
-    if (e % args.log_every == 0) or (e == args.episodes - 1):
-        logger.record(episode=e, epsilon=mario.exploration_rate, step=mario.curr_step)
-
-        elapsed = time.time() - training_start
-        frac_done = (e + 1) / args.episodes
-        eta_sec = elapsed / frac_done - elapsed if frac_done > 0 else float("nan")
-        print(
-            f"Progresso: {frac_done * 100:.1f}% ({e + 1}/{args.episodes} episodi) - "
-            f"Trascorso {elapsed / 60:.1f} min - Stimato rimanente {eta_sec / 60:.1f} min"
-        )
+        if (e % args.log_every == 0) or (e == args.episodes - 1):
+            logger.record(episode=e, epsilon=mario.exploration_rate, step=mario.curr_step)
+            elapsed = time.time() - training_start
+            frac_done = (e + 1) / args.episodes
+            eta_sec = elapsed / frac_done - elapsed if frac_done > 0 else float("nan")
+            print(
+                f"Progresso: {frac_done * 100:.1f}% ({e + 1}/{args.episodes} episodi) - "
+                f"Trascorso {elapsed / 60:.1f} min - Stimato rimanente {eta_sec / 60:.1f} min"
+            )
+except KeyboardInterrupt:
+    print("\nInterrotto manualmente — salvo un checkpoint finale prima di uscire...")
+    if not args.eval:
+        mario.save()
+finally:
+    env.close()
+    print(f"Sessione terminata dopo {(time.time() - training_start) / 60:.1f} minuti.")
 
 env.close()
 print(f"Training completato in {(time.time() - training_start) / 60:.1f} minuti.")
