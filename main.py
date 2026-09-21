@@ -17,40 +17,30 @@ from metric_logger import MetricLogger
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train or evaluate a Mario RL agent")
-    parser.add_argument("--save-every", type=int, default=int(5e5))
     parser.add_argument(
-        "--run-name",
-        type=str,
-        default=None,
-        help="Label for this run (e.g. 'configA-lr2.5e-4'). Used for the checkpoint folder name "
-             "and printed to console, so you can tell runs apart when comparing configurations.",
+        "--run-name", type=str, default=None,
+        help="Label for this run (e.g. 'configA-lr2.5e-4'). Used for the checkpoint folder name.",
     )
     parser.add_argument("--render", choices=["rgb", "human"], default="rgb")
     parser.add_argument(
-        "--speed",
-        choices=["fast", "normal"],
-        default="fast",
-        help="'normal' paces playback to real NES speed (~60 fps) for recording demos. "
-             "Only meaningful with --render human; ignored otherwise.",
+        "--speed", choices=["fast", "normal"], default="fast",
+        help="'normal' paces playback to real NES speed. Only meaningful with --render human.",
     )
     parser.add_argument("--episodes", type=int, default=40)
     parser.add_argument(
-        "--load-checkpoint",
-        type=str,
-        default=None,
+        "--load-checkpoint", type=str, default=None,
         help="Path to a .chkpt file to resume training from, or to play with a trained agent.",
     )
     parser.add_argument(
-        "--eval",
-        action="store_true",
-        help="Evaluation mode: no learning, no exploration (pure exploit). "
-             "Use together with --load-checkpoint and --render human --speed normal for demos.",
+        "--eval", action="store_true",
+        help="Evaluation mode: no learning, no exploration (pure exploit).",
     )
-
-
-
+    parser.add_argument("--save-every", type=int, default=int(5e5))
+    parser.add_argument(
+        "--log-every", type=int, default=20,
+        help="Print/save a progress summary every N episodes.",
+    )
     return parser.parse_args()
-
 
 
 args = parse_args()
@@ -68,7 +58,6 @@ env = GrayScaleObservation(env)
 env = ResizeObservation(env, shape=84)
 env = FrameStack(env, num_stack=4)
 
-# Name the run: explicit --run-name if given, otherwise a timestamp
 run_label = args.run_name or datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 save_dir = Path("checkpoints") / run_label
 save_dir.mkdir(parents=True, exist_ok=True)
@@ -84,9 +73,8 @@ if args.load_checkpoint:
     mario.load(args.load_checkpoint)
 
 if args.eval:
-    mario.exploration_rate = 0.0  # pure exploit, no random actions
+    mario.eval_mode = True
 
-# Snapshot of the hyperparameters used in this run, for later comparison across configurations
 config = {
     "run_name": run_label,
     "episodes": args.episodes,
@@ -109,8 +97,9 @@ logger = MetricLogger(save_dir)
 print(f"=== Esecuzione: {run_label} ===")
 print(f"episodes={args.episodes}  device={mario.device}  render={args.render}  eval={args.eval}")
 
-# NES runs at ~60.0988 fps; SkipFrame repeats each action for 4 real frames per env.step() call
-FRAME_DELAY = 4 / 60.0988
+FRAME_DELAY = 4 / 60.0988  # NES ~60.0988 fps; SkipFrame repeats each action for 4 real frames
+
+training_start = time.time()
 
 for e in range(args.episodes):
     state = env.reset()
@@ -136,7 +125,16 @@ for e in range(args.episodes):
 
     logger.log_episode()
 
-    if (e % 20 == 0) or (e == args.episodes - 1):
+    if (e % args.log_every == 0) or (e == args.episodes - 1):
         logger.record(episode=e, epsilon=mario.exploration_rate, step=mario.curr_step)
 
+        elapsed = time.time() - training_start
+        frac_done = (e + 1) / args.episodes
+        eta_sec = elapsed / frac_done - elapsed if frac_done > 0 else float("nan")
+        print(
+            f"Progresso: {frac_done * 100:.1f}% ({e + 1}/{args.episodes} episodi) - "
+            f"Trascorso {elapsed / 60:.1f} min - Stimato rimanente {eta_sec / 60:.1f} min"
+        )
+
 env.close()
+print(f"Training completato in {(time.time() - training_start) / 60:.1f} minuti.")

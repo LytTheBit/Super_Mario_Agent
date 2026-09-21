@@ -23,21 +23,26 @@ class Mario:
         self.exploration_rate_decay = 0.99999975
         self.exploration_rate_min = 0.1
         self.curr_step = 0
+
+        self.eval_mode = False  # when True, act() is always greedy and never decays exploration_rate
+
         self.memory = TensorDictReplayBuffer(storage=LazyMemmapStorage(100000, device=torch.device("cpu")))
         self.batch_size = 32
 
-        self.gamma = 0.9
+        self.gamma = 0.9  # discount factor for future rewards
 
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=0.00025)
         self.loss_fn = torch.nn.SmoothL1Loss()
 
-        self.burnin = 1e4
-        self.learn_every = 3
-        self.sync_every = 1e4
+        self.burnin = 1e4       # min. experiences before we start training
+        self.learn_every = 3    # steps between calls to update_Q_online
+        self.sync_every = 1e4   # steps between target network sync
 
     def act(self, state):
-        """Given a state, choose an epsilon-greedy action and update curr_step."""
-        if np.random.rand() < self.exploration_rate:
+        """Given a state, choose an action.
+        If eval_mode is True: always greedy (argmax), exploration_rate is untouched.
+        Otherwise: epsilon-greedy, and exploration_rate decays after every call."""
+        if not self.eval_mode and np.random.rand() < self.exploration_rate:
             action_idx = np.random.randint(self.action_dim)
         else:
             state = state[0].__array__() if isinstance(state, tuple) else state.__array__()
@@ -45,8 +50,9 @@ class Mario:
             action_values = self.net(state, model="online")
             action_idx = torch.argmax(action_values, axis=1).item()
 
-        self.exploration_rate *= self.exploration_rate_decay
-        self.exploration_rate = max(self.exploration_rate_min, self.exploration_rate)
+        if not self.eval_mode:
+            self.exploration_rate *= self.exploration_rate_decay
+            self.exploration_rate = max(self.exploration_rate_min, self.exploration_rate)
 
         self.curr_step += 1
         return action_idx
