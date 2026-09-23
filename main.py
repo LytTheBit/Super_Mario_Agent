@@ -142,6 +142,3 @@ except KeyboardInterrupt:
 finally:
     env.close()
     print(f"Sessione terminata dopo {(time.time() - training_start) / 60:.1f} minuti.")
-
-env.close()
-print(f"Training completato in {(time.time() - training_start) / 60:.1f} minuti.")
