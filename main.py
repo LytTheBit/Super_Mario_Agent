@@ -42,6 +42,36 @@ def parse_args():
     )
     return parser.parse_args()
 
+# Reward shaping wrapper
+class RewardShaping(gym.Wrapper):
+    """Adds a flag-completion bonus, and a small penalty for not making forward progress
+    (discourages the 'stand still / oscillate until timeout' failure mode)."""
+    def __init__(self, env, flag_bonus=500, idle_penalty=-1, idle_window=20):
+        super().__init__(env)
+        self.flag_bonus = flag_bonus
+        self.idle_penalty = idle_penalty
+        self.idle_window = idle_window
+        self.best_x = 0
+        self.steps_since_progress = 0
+
+    def reset(self, **kwargs):
+        self.best_x = 0
+        self.steps_since_progress = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        obs, reward, done, trunc, info = self.env.step(action)
+        if info["x_pos"] > self.best_x:
+            self.best_x = info["x_pos"]
+            self.steps_since_progress = 0
+        else:
+            self.steps_since_progress += 1
+            if self.steps_since_progress >= self.idle_window:
+                reward += self.idle_penalty
+        if info["flag_get"]:
+            reward += self.flag_bonus
+        return obs, reward, done, trunc, info
+
 
 args = parse_args()
 
@@ -53,6 +83,7 @@ else:
     )
 
 env = JoypadSpace(env, [["right"], ["right", "A"]])
+env = RewardShaping(env)
 env = SkipFrame(env, skip=4)
 env = GrayScaleObservation(env)
 env = ResizeObservation(env, shape=84)
@@ -83,7 +114,8 @@ config = {
     "gamma": mario.gamma,
     "learning_rate": mario.optimizer.param_groups[0]["lr"],
     "batch_size": mario.batch_size,
-    "sync_every": mario.sync_every,
+    #"sync_every": mario.sync_every,
+    "tau": mario.tau,   # soft update rate for the target network
     "learn_every": mario.learn_every,
     "burnin": mario.burnin,
     "exploration_rate_decay": mario.exploration_rate_decay,

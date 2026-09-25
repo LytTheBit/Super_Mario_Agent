@@ -36,7 +36,7 @@ class Mario:
 
         self.burnin = 1e4       # min. experiences before we start training
         self.learn_every = 3    # steps between calls to update_Q_online
-        self.sync_every = 1e4   # steps between target network sync
+        self.tau = 0.005        # soft update rate for the target network (replaces sync_every)
 
     def act(self, state):
         """Given a state, choose an action.
@@ -107,15 +107,16 @@ class Mario:
         self.optimizer.step()
         return loss.item()
 
-    def sync_Q_target(self):
-        """Copy Q_online's weights into Q_target."""
-        self.net.target.load_state_dict(self.net.online.state_dict())
+    def soft_update_Q_target(self):
+        """Slowly blend target weights toward online weights, every step
+        (replaces the old hard copy every sync_every steps)."""
+        for target_param, online_param in zip(self.net.target.parameters(), self.net.online.parameters()):
+            target_param.data.copy_(self.tau * online_param.data + (1.0 - self.tau) * target_param.data)
 
     def learn(self):
-        """Orchestrates one learning step: sync, sample, estimate, target, update.
+        """Orchestrates one learning step: soft-sync, sample, estimate, target, update.
         Returns (mean Q value, loss) or (None, None) if no update happened this step."""
-        if self.curr_step % self.sync_every == 0:
-            self.sync_Q_target()
+        self.soft_update_Q_target()  # every step, instead of the old "if curr_step % sync_every == 0"
 
         if self.curr_step % self.save_every == 0:
             self.save()
@@ -149,7 +150,5 @@ class Mario:
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.net.load_state_dict(checkpoint["model"])
         self.exploration_rate = checkpoint["exploration_rate"]
-        self.curr_step = checkpoint.get("curr_step",
-                                        0)  # .get: retro-compatibile con vecchi checkpoint senza questo campo
-        print(
-            f"Loaded checkpoint from {checkpoint_path} (exploration_rate={self.exploration_rate:.4f}, curr_step={self.curr_step})")
+        self.curr_step = checkpoint.get("curr_step", 0)
+        print(f"Loaded checkpoint from {checkpoint_path} (exploration_rate={self.exploration_rate:.4f}, curr_step={self.curr_step})")
