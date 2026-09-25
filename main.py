@@ -167,6 +167,9 @@ try:
                 f"Progresso: {frac_done * 100:.1f}% ({e + 1}/{args.episodes} episodi) - "
                 f"Trascorso {elapsed / 60:.1f} min - Stimato rimanente {eta_sec / 60:.1f} min"
             )
+            mean_r, succ_rate = mario.quick_eval(env, n_episodes=1)
+            mario.save_if_best(mean_r)
+            print(f"Eval rapida: reward={mean_r:.1f} success={succ_rate:.0%}")
 except KeyboardInterrupt:
     print("\nInterrotto manualmente — salvo un checkpoint finale prima di uscire...")
     if not args.eval:

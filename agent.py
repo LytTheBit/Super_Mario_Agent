@@ -36,7 +36,9 @@ class Mario:
 
         self.burnin = 1e4       # min. experiences before we start training
         self.learn_every = 3    # steps between calls to update_Q_online
-        self.tau = 0.005        # soft update rate for the target network (replaces sync_every)
+        self.tau = 0.005        # soft update rate for the target network
+
+        self.best_reward = float("-inf")  # tracks the best quick_eval score seen so far
 
     def act(self, state):
         """Given a state, choose an action.
@@ -116,7 +118,7 @@ class Mario:
     def learn(self):
         """Orchestrates one learning step: soft-sync, sample, estimate, target, update.
         Returns (mean Q value, loss) or (None, None) if no update happened this step."""
-        self.soft_update_Q_target()  # every step, instead of the old "if curr_step % sync_every == 0"
+        self.soft_update_Q_target()
 
         if self.curr_step % self.save_every == 0:
             self.save()
@@ -152,3 +154,36 @@ class Mario:
         self.exploration_rate = checkpoint["exploration_rate"]
         self.curr_step = checkpoint.get("curr_step", 0)
         print(f"Loaded checkpoint from {checkpoint_path} (exploration_rate={self.exploration_rate:.4f}, curr_step={self.curr_step})")
+
+    def quick_eval(self, env, n_episodes=1):
+        """Run n_episodes in pure-greedy mode and return (mean_reward, success_rate).
+        Temporarily switches to eval_mode, restores whatever it was before."""
+        was_eval = self.eval_mode
+        self.eval_mode = True
+        rewards, successes = [], 0
+        for _ in range(n_episodes):
+            state = env.reset()
+            ep_reward = 0.0
+            while True:
+                action = self.act(state)
+                next_state, reward, done, trunc, info = env.step(action)
+                ep_reward += reward
+                state = next_state
+                if done or info["flag_get"]:
+                    if info["flag_get"]:
+                        successes += 1
+                    break
+            rewards.append(ep_reward)
+        self.eval_mode = was_eval
+        return sum(rewards) / len(rewards), successes / n_episodes
+
+    def save_if_best(self, mean_reward):
+        """Save a separate 'best.chkpt' only if this evaluation beats every previous one."""
+        if mean_reward > self.best_reward:
+            self.best_reward = mean_reward
+            best_path = self.save_dir / "best.chkpt"
+            torch.save(
+                dict(model=self.net.state_dict(), exploration_rate=self.exploration_rate, curr_step=self.curr_step),
+                best_path,
+            )
+            print(f"Nuovo best checkpoint! reward={mean_reward:.1f} salvato in {best_path}")
