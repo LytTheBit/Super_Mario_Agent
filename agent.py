@@ -24,7 +24,8 @@ class Mario:
         self.exploration_rate_min = 0.1
         self.curr_step = 0
 
-        self.eval_mode = False  # when True, act() is always greedy and never decays exploration_rate
+        self.eval_mode = False  # when True, act() is always greedy and never decays exploration_rate,
+                                 # and never advances curr_step (so quick_eval doesn't inflate the step count)
 
         self.memory = TensorDictReplayBuffer(storage=LazyMemmapStorage(100000, device=torch.device("cpu")))
         self.batch_size = 32
@@ -36,14 +37,15 @@ class Mario:
 
         self.burnin = 1e4       # min. experiences before we start training
         self.learn_every = 3    # steps between calls to update_Q_online
-        self.tau = 0.005        # soft update rate for the target network
+        self.sync_every = 1e4   # steps between target network hard sync (reverted from soft update)
 
         self.best_reward = float("-inf")  # tracks the best quick_eval score seen so far
 
     def act(self, state):
         """Given a state, choose an action.
-        If eval_mode is True: always greedy (argmax), exploration_rate is untouched.
-        Otherwise: epsilon-greedy, and exploration_rate decays after every call."""
+        If eval_mode is True: always greedy (argmax), exploration_rate is untouched,
+        and curr_step is NOT advanced (so quick_eval doesn't inflate the training step count).
+        Otherwise: epsilon-greedy, exploration_rate decays, and curr_step advances."""
         if not self.eval_mode and np.random.rand() < self.exploration_rate:
             action_idx = np.random.randint(self.action_dim)
         else:
@@ -55,8 +57,8 @@ class Mario:
         if not self.eval_mode:
             self.exploration_rate *= self.exploration_rate_decay
             self.exploration_rate = max(self.exploration_rate_min, self.exploration_rate)
+            self.curr_step += 1
 
-        self.curr_step += 1
         return action_idx
 
     def cache(self, state, next_state, action, reward, done):
@@ -109,16 +111,15 @@ class Mario:
         self.optimizer.step()
         return loss.item()
 
-    def soft_update_Q_target(self):
-        """Slowly blend target weights toward online weights, every step
-        (replaces the old hard copy every sync_every steps)."""
-        for target_param, online_param in zip(self.net.target.parameters(), self.net.online.parameters()):
-            target_param.data.copy_(self.tau * online_param.data + (1.0 - self.tau) * target_param.data)
+    def sync_Q_target(self):
+        """Copy Q_online's weights into Q_target (hard sync, restored from v1)."""
+        self.net.target.load_state_dict(self.net.online.state_dict())
 
     def learn(self):
-        """Orchestrates one learning step: soft-sync, sample, estimate, target, update.
+        """Orchestrates one learning step: hard-sync (periodically), sample, estimate, target, update.
         Returns (mean Q value, loss) or (None, None) if no update happened this step."""
-        self.soft_update_Q_target()
+        if self.curr_step % self.sync_every == 0:
+            self.sync_Q_target()
 
         if self.curr_step % self.save_every == 0:
             self.save()
@@ -157,7 +158,8 @@ class Mario:
 
     def quick_eval(self, env, n_episodes=1):
         """Run n_episodes in pure-greedy mode and return (mean_reward, success_rate).
-        Temporarily switches to eval_mode, restores whatever it was before."""
+        Temporarily switches to eval_mode, restores whatever it was before.
+        Does NOT advance curr_step (see act())."""
         was_eval = self.eval_mode
         self.eval_mode = True
         rewards, successes = [], 0

@@ -114,8 +114,7 @@ config = {
     "gamma": mario.gamma,
     "learning_rate": mario.optimizer.param_groups[0]["lr"],
     "batch_size": mario.batch_size,
-    #"sync_every": mario.sync_every,
-    "tau": mario.tau,   # soft update rate for the target network
+    "sync_every": mario.sync_every,
     "learn_every": mario.learn_every,
     "burnin": mario.burnin,
     "exploration_rate_decay": mario.exploration_rate_decay,
