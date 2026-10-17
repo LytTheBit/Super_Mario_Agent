@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument("--log-every", type=int, default=20)
     parser.add_argument(
         "--reward-mode",
-        choices=["none", "flag-bonus", "coin-shaping"],
+        choices=["none", "flag-bonus", "coin-shaping", "game-score"],
         default="none",
         help="'none': default env reward. 'flag-bonus': +500 on level completion. "
              "'coin-shaping': + coin delta * 10, plus the flag bonus.",
@@ -88,6 +88,17 @@ with open(save_dir / "config.json", "w") as f:
 
 logger = MetricLogger(save_dir)
 
+quick_eval_path = save_dir / "quick_eval.csv"
+if not quick_eval_path.exists():
+    quick_eval_path.write_text("episode,step,epsilon,eval_reward,eval_success,eval_max_x_pos\n")
+
+
+def log_quick_eval(episode, step, epsilon, reward, success, max_x):
+    """Append one greedy-evaluation row. Key on 'step', not 'episode': the episode
+    index restarts at 0 whenever training is resumed from a checkpoint."""
+    with open(quick_eval_path, "a") as f:
+        f.write(f"{episode},{step},{epsilon:.6f},{reward:.2f},{success:.2f},{max_x:.1f}\n")
+
 print(f"=== Esecuzione: {run_label} ===")
 print(f"episodes={args.episodes}  device={mario.device}  render={args.render}  eval={args.eval}  reward_mode={args.reward_mode}")
 
@@ -123,9 +134,10 @@ try:
         if (e % args.log_every == 0) or (e == args.episodes - 1):
             logger.record(episode=e, epsilon=mario.exploration_rate, step=mario.curr_step)
 
-            mean_r, succ_rate = mario.quick_eval(env, n_episodes=1)
+            mean_r, succ_rate, mean_x = mario.quick_eval(env, n_episodes=1)
             mario.save_if_best(mean_r)
-            print(f"Eval rapida: reward={mean_r:.1f} success={succ_rate:.0%}")
+            log_quick_eval(e, mario.curr_step, mario.exploration_rate, mean_r, succ_rate, mean_x)
+            print(f"Eval rapida: reward={mean_r:.1f} x_pos={mean_x:.0f} success={succ_rate:.0%}")
 
             elapsed = time.time() - training_start
             frac_done = (e + 1) / args.episodes

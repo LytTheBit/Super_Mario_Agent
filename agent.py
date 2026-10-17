@@ -157,27 +157,29 @@ class Mario:
         print(f"Loaded checkpoint from {checkpoint_path} (exploration_rate={self.exploration_rate:.4f}, curr_step={self.curr_step})")
 
     def quick_eval(self, env, n_episodes=1):
-        """Run n_episodes in pure-greedy mode and return (mean_reward, success_rate).
-        Temporarily switches to eval_mode, restores whatever it was before.
+        """Run n_episodes in pure-greedy mode.
+        Returns (mean_reward, success_rate, mean_max_x_pos).
         Does NOT advance curr_step (see act())."""
         was_eval = self.eval_mode
         self.eval_mode = True
-        rewards, successes = [], 0
+        rewards, xs, successes = [], [], 0
         for _ in range(n_episodes):
             state = env.reset()
-            ep_reward = 0.0
+            ep_reward, max_x = 0.0, 0
             while True:
                 action = self.act(state)
                 next_state, reward, done, trunc, info = env.step(action)
                 ep_reward += reward
+                max_x = max(max_x, info["x_pos"])
                 state = next_state
                 if done or info["flag_get"]:
                     if info["flag_get"]:
                         successes += 1
                     break
             rewards.append(ep_reward)
+            xs.append(max_x)
         self.eval_mode = was_eval
-        return sum(rewards) / len(rewards), successes / n_episodes
+        return sum(rewards) / len(rewards), successes / n_episodes, sum(xs) / len(xs)
 
     def save_if_best(self, mean_reward):
         """Save a separate 'best.chkpt' only if this evaluation beats every previous one."""
