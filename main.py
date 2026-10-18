@@ -32,6 +32,10 @@ def parse_args():
         help="'none': default env reward. 'flag-bonus': +500 on level completion. "
              "'coin-shaping': + coin delta * 10, plus the flag bonus.",
     )
+    parser.add_argument(
+        "--epsilon-min", type=float, default=0.1,
+        help="Floor of the epsilon-greedy exploration rate (0.1 = PyTorch tutorial default).",
+    )
     return parser.parse_args()
 
 
@@ -62,6 +66,8 @@ mario = Mario(
     save_every=args.save_every,
 )
 
+mario.exploration_rate_min = args.epsilon_min
+
 if args.load_checkpoint:
     mario.load(args.load_checkpoint)
 
@@ -87,6 +93,14 @@ with open(save_dir / "config.json", "w") as f:
     json.dump(config, f, indent=2)
 
 logger = MetricLogger(save_dir)
+
+from collections import deque
+
+train_flags = deque(maxlen=250)  # did Mario reach the flag in each of the last 250 training episodes?
+flags_total = 0
+flags_path = save_dir / "train_flags.csv"
+if not flags_path.exists():
+    flags_path.write_text("episode,step,epsilon,flag_rate_last250,flags_total\n")
 
 quick_eval_path = save_dir / "quick_eval.csv"
 if not quick_eval_path.exists():
@@ -130,6 +144,9 @@ try:
                 break
 
         logger.log_episode()
+        reached = bool(info["flag_get"])  # info of the last step of the episode
+        train_flags.append(reached)
+        flags_total += int(reached)
 
         if (e % args.log_every == 0) or (e == args.episodes - 1):
             logger.record(episode=e, epsilon=mario.exploration_rate, step=mario.curr_step)
@@ -138,6 +155,12 @@ try:
             mario.save_if_best(mean_r)
             log_quick_eval(e, mario.curr_step, mario.exploration_rate, mean_r, succ_rate, mean_x)
             print(f"Eval rapida: reward={mean_r:.1f} x_pos={mean_x:.0f} success={succ_rate:.0%}")
+
+            with open(flags_path, "a") as f:
+                f.write(
+                    f"{e},{mario.curr_step},{mario.exploration_rate:.6f},"
+                    f"{sum(train_flags) / len(train_flags):.4f},{flags_total}\n"
+                )
 
             elapsed = time.time() - training_start
             frac_done = (e + 1) / args.episodes
